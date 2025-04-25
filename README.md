@@ -1,2 +1,29 @@
+onSubmit(event: any) {
+  const updatedData = this.dataSource?.filteredData?.filter((x: any) => x.isChecked && x.status === 'active');
 
-https://objects.githubusercontent.com/github-production-release-asset-2e65be/696192900/795f5d1b-e62b-45cb-b014-d612f41cdf8e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=releaseassetproduction%2F20250218%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250218T093600Z&X-Amz-Expires=300&X-Amz-Signature=94e3f76744fd29b90e6cb4e6894eb3556f03be7b251cb908246ac068d5ebb305&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3Dgradle-8.10-bin.zip&response-content-type=application%2Foctet-stream
+  const payload = updatedData.map(({ entityName, isChecked, ...rest }) => {
+    // Create the new updated record with status "active"
+    const newRecord = {
+      ...rest,
+      entityName,
+      status: 'active', // NEW record is active
+      perDayTrfInwardLimit: rest.perDayLoadLimit,
+      txnLtfrInwardCount: rest.txnLoadCount,
+      perDayTrfOutwardLimit: rest.perDayUnLoadLimit,
+      txnTrfOutwardCount: rest.txnUnloadCount
+    };
+
+    return {
+      oldEntityId: rest.id || rest.entityId, // For marking old as inactive
+      newRecord: newRecord
+    };
+  });
+
+  // Call backend API to deactivate old + insert new record
+  this.yourService.updateWithNewRecord(payload).subscribe(response => {
+    console.log('Entity updated with new rows:', response);
+
+    // Optionally re-fetch only active data to refresh UI
+    this.fetchActiveData();
+  });
+}
