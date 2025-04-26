@@ -322,3 +322,92 @@ public Response updateKycLimits(List<KycLimit> kycLimits) {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+private boolean isChanged(KycLimit oldLimit, KycLimit newLimit) {
+    if (!Objects.equals(oldLimit.getCapacityLimit(), newLimit.getCapacityLimit())) return true;
+    if (!Objects.equals(oldLimit.getPerDayLoadLimit(), newLimit.getPerDayLoadLimit())) return true;
+    if (!Objects.equals(oldLimit.getPerDayUnLoadLimit(), newLimit.getPerDayUnLoadLimit())) return true;
+    if (!Objects.equals(oldLimit.getPerDayTrfInwardLimit(), newLimit.getPerDayTrfInwardLimit())) return true;
+    if (!Objects.equals(oldLimit.getPerDayTfrOutwardLimit(), newLimit.getPerDayTfrOutwardLimit())) return true;
+    if (!Objects.equals(oldLimit.getTxnLoadCount(), newLimit.getTxnLoadCount())) return true;
+    if (!Objects.equals(oldLimit.getTxnTfrInwardCount(), newLimit.getTxnTfrInwardCount())) return true;
+    if (!Objects.equals(oldLimit.getTxnUnloadCount(), newLimit.getTxnUnloadCount())) return true;
+    if (!Objects.equals(oldLimit.getTxnTrfOutwardCount(), newLimit.getTxnTrfOutwardCount())) return true;
+    if (!Objects.equals(oldLimit.getPerTransaction(), newLimit.getPerTransaction())) return true;
+    if (!Objects.equals(oldLimit.getMonthlyTrfOutwardCount(), newLimit.getMonthlyTrfOutwardCount())) return true;
+    return false;
+}
+
+
+for (KycLimit dtoLimit : kycLimit) {
+    log.info("Processing update for KycLimit ID: {}", dtoLimit.getId());
+
+    KycLimit existingLimit = kycLimitManager.getByID(dtoLimit.getId());
+    if (existingLimit == null) {
+        log.error("No existing KycLimit found for ID: {}", dtoLimit.getId());
+        return error(Response.Status.BAD_REQUEST, "Record not found");
+    }
+
+    if (!isChanged(existingLimit, dtoLimit)) {
+        log.info("No changes detected for ID: {}", dtoLimit.getId());
+        return error(Response.Status.NOT_MODIFIED, "Not Changed");
+    }
+
+    existingLimit.setStatus("inactive");
+    getDB().saveOrUpdate(existingLimit);
+
+    KycLimit newLimit = new KycLimit();
+    // Copy fields (you can also consider using BeanUtils.copyProperties for shorter code)
+    newLimit.setType(dtoLimit.getType());
+    newLimit.setLimitType(dtoLimit.getLimitType());
+    newLimit.setCapacityLimit(dtoLimit.getCapacityLimit());
+    newLimit.setPerDayLoadLimit(dtoLimit.getPerDayLoadLimit());
+    newLimit.setPerDayUnLoadLimit(dtoLimit.getPerDayUnLoadLimit());
+    newLimit.setPerDayTrfInwardLimit(dtoLimit.getPerDayTrfInwardLimit());
+    newLimit.setPerDayTfrOutwardLimit(dtoLimit.getPerDayTfrOutwardLimit());
+    newLimit.setTxnLoadCount(dtoLimit.getTxnLoadCount());
+    newLimit.setTxnTfrInwardCount(dtoLimit.getTxnTfrInwardCount()); // Correct spelling
+    newLimit.setTxnUnloadCount(dtoLimit.getTxnUnloadCount());
+    newLimit.setTxnTrfOutwardCount(dtoLimit.getTxnTrfOutwardCount());
+    newLimit.setPerTransaction(dtoLimit.getPerTransaction());
+    newLimit.setMonthlyTrfOutwardCount(dtoLimit.getMonthlyTrfOutwardCount());
+    newLimit.setStatus("active");
+    newLimit.setCreatedBy(getCurrentUser());
+
+    try {
+        getDB().save(newLimit);
+        log.info("Successfully saved new KycLimit ID: {}", newLimit.getId());
+    } catch (Exception e) {
+        log.error("Error saving new KycLimit record", e);
+        throw e;
+    }
+
+    if (StringUtils.equals(newLimit.getLimitType(), KYC_LIMIT_TYPE_NORMAL)) {
+        sendToRTSPSwitch(newLimit);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
