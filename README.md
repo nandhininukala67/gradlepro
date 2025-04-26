@@ -255,18 +255,70 @@ fetchKycDetails() {
 
 
 
-public class ApiResponseWithData<T> {
-    private boolean success;
-    private String message;
-    private T data;
-
-    public ApiResponseWithData(boolean success, String message, T data) {
-        this.success = success;
-        this.message = message;
-        this.data = data;
+@POST
+@Path("/update")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response updateKycLimits(List<KycLimit> kycLimits) {
+    if (kycLimits == null || kycLimits.isEmpty()) {
+        return error(Response.Status.BAD_REQUEST, "No data provided");
     }
 
-    // Getters and setters
+    List<KycLimit> updatedRecords = new ArrayList<>(); // 👈 collect updated records
+
+    for (KycLimit dtoLimit : kycLimits) {
+        KycLimit existingLimit = kycLimitManager.getByID(dtoLimit.getId());
+
+        if (existingLimit == null) {
+            continue; // Skip if not found
+        }
+
+        if (!isChanged(existingLimit, dtoLimit)) {
+            continue; // Skip if no changes
+        }
+
+        // Mark old record inactive
+        existingLimit.setStatus("inactive");
+        existingLimit.setUpdatedBy(getCurrentUser());
+        existingLimit.setUpdatedOn(new Date());
+        dbService.saveOrUpdate(existingLimit);
+
+        // Create new record
+        KycLimit newLimit = new KycLimit();
+        newLimit.setId(UUID.randomUUID().toString()); // or setId(null) if auto-gen
+        newLimit.setType(dtoLimit.getType());
+        newLimit.setLimitType(dtoLimit.getLimitType());
+        newLimit.setCapacityLimit(dtoLimit.getCapacityLimit());
+        newLimit.setPerDayLoadLimit(dtoLimit.getPerDayLoadLimit());
+        newLimit.setPerDayUnLoadLimit(dtoLimit.getPerDayUnLoadLimit());
+        newLimit.setPerDayTrfInwardLimit(dtoLimit.getPerDayTrfInwardLimit());
+        newLimit.setPerDayTfrOutwardLimit(dtoLimit.getPerDayTfrOutwardLimit());
+        newLimit.setTxnLoadCount(dtoLimit.getTxnLoadCount());
+        newLimit.setTxnLTfrInwardCount(dtoLimit.getTxnLTfrInwardCount());
+        newLimit.setTxnUnloadCount(dtoLimit.getTxnUnloadCount());
+        newLimit.setTxnTrfOutwardCount(dtoLimit.getTxnTrfOutwardCount());
+        newLimit.setPerTransaction(dtoLimit.getPerTransaction());
+        newLimit.setMonthlyTrfOutwardCount(dtoLimit.getMonthlyTrfOutwardCount());
+        newLimit.setStatus("active");
+        newLimit.setCreatedBy(getCurrentUser());
+        newLimit.setCreatedOn(new Date());
+
+        dbService.save(newLimit);
+
+        // Optional: send to external switch
+        if (StringUtils.equalsIgnoreCase(newLimit.getLimitType(), KYC_LIMIT_TYPE_NORMAL)) {
+            sendToRTSPSwitch(newLimit);
+        }
+
+        updatedRecords.add(newLimit); // 👈 Collect the newly created active record
+    }
+
+    if (updatedRecords.isEmpty()) {
+        return error(Response.Status.NOT_MODIFIED, "No records were updated");
+    }
+
+    return Response.ok(new ApiResponseWithData<>(true, "Updated Successfully", updatedRecords))
+            .build();
 }
 
 
