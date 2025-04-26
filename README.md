@@ -228,6 +228,17 @@ onSubmit(event: any) {
 
 
 
+fetchKycDetails() {
+  this.kycService.getDetails().subscribe(res => {
+    if (res && res.is_success) {
+      const activeRecords = res.data.filter((record: any) => record.status === 'active');
+      this.dataSource = new MatTableDataSource(activeRecords);
+      this.dsSource = new MatTableDataSource(JSON.parse(JSON.stringify(activeRecords))); // Deep clone
+    } else {
+      this.toastr.error('Failed to load KYC details');
+    }
+  });
+}
 
 
 
