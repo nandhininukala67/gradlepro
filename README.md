@@ -89,3 +89,92 @@ onSubmit(event: any) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+public Response updateKycLimits(List<KycLimit> kycLimitList) {
+    if (kycLimitList == null || kycLimitList.isEmpty()) {
+        return error(Response.Status.BAD_REQUEST, "Input list is empty");
+    }
+
+    for (KycLimit dtoLimit : kycLimitList) {
+        try {
+            if (dtoLimit.getId() == null) {
+                return error(Response.Status.BAD_REQUEST, "Missing ID for update");
+            }
+
+            KycLimit existingLimit = kycLimitManager.getByID(dtoLimit.getId());
+
+            if (existingLimit == null) {
+                return error(Response.Status.NOT_FOUND, "No record found for ID: " + dtoLimit.getId());
+            }
+
+            if (!isChanged(existingLimit, dtoLimit)) {
+                return error(Response.Status.NOT_MODIFIED, "No changes detected for ID: " + dtoLimit.getId());
+            }
+
+            // Step 1: Mark old record as inactive
+            existingLimit.setStatus("inactive");
+            existingLimit.setUpdatedOn(new Date()); // if you track update timestamps
+            getDB().saveOrUpdate(existingLimit);
+
+            // Step 2: Insert new active record
+            KycLimit newLimit = new KycLimit();
+            newLimit.setType(dtoLimit.getType());
+            newLimit.setLimitType(dtoLimit.getLimitType());
+            newLimit.setCapacityLimit(dtoLimit.getCapacityLimit());
+            newLimit.setPerDayLoadLimit(dtoLimit.getPerDayLoadLimit());
+            newLimit.setPerDayUnLoadLimit(dtoLimit.getPerDayUnLoadLimit());
+            newLimit.setPerDayTrfInwardLimit(dtoLimit.getPerDayTrfInwardLimit());
+            newLimit.setPerDayTfrOutwardLimit(dtoLimit.getPerDayTfrOutwardLimit());
+            newLimit.setTxnLoadCount(dtoLimit.getTxnLoadCount());
+            newLimit.setTxnLTfrInwardCount(dtoLimit.getTxnLTfrInwardCount());
+            newLimit.setTxnUnloadCount(dtoLimit.getTxnUnloadCount());
+            newLimit.setTxnTrfOutwardCount(dtoLimit.getTxnTrfOutwardCount());
+            newLimit.setPerTransaction(dtoLimit.getPerTransaction());
+            newLimit.setMonthlyTrfOutwardCount(dtoLimit.getMonthlyTrfOutwardCount());
+            newLimit.setStatus("active");
+            newLimit.setCreatedBy(getCurrentUser());
+            newLimit.setCreatedOn(new Date());
+
+            getDB().save(newLimit);
+
+            // Step 3: Optionally notify external systems
+            if (StringUtils.equals(newLimit.getLimitType(), KYC_LIMIT_TYPE_NORMAL)) {
+                sendToRTSPSwitch(newLimit);
+            }
+
+        } catch (Exception e) {
+            // Basic logging
+            log.error("Error updating KycLimit for ID: " + dtoLimit.getId(), e);
+            return error(Response.Status.INTERNAL_SERVER_ERROR, "Error updating KYC Limit: " + e.getMessage());
+        }
+    }
+
+    return success("KYC limits updated successfully");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
