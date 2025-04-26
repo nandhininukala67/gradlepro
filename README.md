@@ -178,3 +178,58 @@ public Response updateKycLimits(List<KycLimit> kycLimitList) {
 
 
 
+onSubmit(event: any) {
+  const updatedData = this.dataSource?.filteredData?.filter((x: any) => x.isChecked);
+
+  const payload = updatedData.map((record: any) => ({
+    id: record.id, // **IMPORTANT** must send existing id
+    type: record.type,
+    limitType: record.limitType,
+    capacityLimit: record.capacityLimit,
+    perDayLoadLimit: record.perDayLoadLimit,
+    perDayUnLoadLimit: record.perDayUnLoadLimit,
+    perDayTrfInwardLimit: record.perDayLoadLimit,         // Mapping correction
+    perDayTrfOutwardLimit: record.perDayUnLoadLimit,
+    txnLoadCount: record.txnLoadCount,
+    txnLTfrInwardCount: record.txnLoadCount,               // Mapping correction
+    txnUnloadCount: record.txnUnloadCount,
+    txnTrfOutwardCount: record.txnUnloadCount,
+    perTransaction: record.perTransaction,
+    monthlyTrfOutwardCount: record.monthlyTrfOutwardCount,
+    status: 'active',
+  }));
+
+  console.log('Payload:', payload);
+
+  if (payload.length > 0) {
+    this.kycService.updateKyc(payload).subscribe(
+      data => {
+        if (data && data.success) {
+          this.toastr.success('KYC limits updated successfully');
+          this.isEditable = false;
+          this.isEditChecked = false;
+          this.fetchKycDetails(); // Refresh the updated data from backend
+        } else if (data && data.message) {
+          this.toastr.error(data.message);
+        } else {
+          this.toastr.error('Server error during update');
+        }
+      },
+      error => {
+        this.toastr.error('Network error during update');
+      }
+    );
+  } else {
+    this.toastr.warning('No records selected for update');
+  }
+}
+
+
+
+
+
+
+
+
+
+
