@@ -1,3 +1,22 @@
+SELECT
+  txn_count,
+  COUNT(*) AS wallet_count,
+  SUM(txn_count * 5000) AS total_amount
+FROM (
+  SELECT
+    payee_wallet,
+    COUNT(*) AS txn_count
+  FROM rtsp.token_tranlog
+  WHERE payer_wallet = 'SPONSOR_WALLET_ID'
+    AND status = 'C'
+    AND amount = 5000
+  GROUP BY payee_wallet
+  HAVING COUNT(*) IN (1, 2, 3)
+) sub
+GROUP BY txn_count
+ORDER BY txn_count;
+ 
+ 
  SELECT  
   COUNT(subquery.payee_wallet) AS wallet_count,  
   SUM(subquery.total_value) AS total_value  
