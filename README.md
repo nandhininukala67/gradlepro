@@ -1,3 +1,89 @@
+-- Assumptions:
+-- - The working table is rtsp.token_tranlog
+-- - Input variables:
+--     :SPONSOR_WALLET_ID (payer_wallet)
+--     :TXN_COUNT (e.g., 2)
+-- - Each transaction has:
+--     payer_wallet, payee_wallet, amount, type, status, balance
+-- - Only successful transactions are considered (status = 'C')
+-- - Fixed disbursement amount = 5000
+-- - A virtual table called eligible_wallets is defined globally via a WITH clause
+
+-- Define the eligible_wallets subquery for reuse
+WITH eligible_wallets AS (
+  SELECT payee_wallet
+  FROM rtsp.token_tranlog
+  WHERE payer_wallet = :SPONSOR_WALLET_ID
+    AND status = 'C'
+    AND amount = 5000
+  GROUP BY payee_wallet
+  HAVING COUNT(*) = :TXN_COUNT
+)
+
+-- 1. Count of eligible payee_wallets
+SELECT COUNT(*) AS total_eligible_wallets
+FROM eligible_wallets;
+
+-- 2. Total value received from sponsor by eligible wallets
+SELECT SUM(amount) AS total_value_from_sponsor
+FROM rtsp.token_tranlog
+WHERE payer_wallet = :SPONSOR_WALLET_ID
+  AND status = 'C'
+  AND amount = 5000
+  AND payee_wallet IN (SELECT payee_wallet FROM eligible_wallets);
+
+-- 3. Total value received by these wallets from any other payer
+SELECT SUM(amount) AS total_value_from_others
+FROM rtsp.token_tranlog
+WHERE status = 'C'
+  AND payee_wallet IN (SELECT payee_wallet FROM eligible_wallets)
+  AND payer_wallet != :SPONSOR_WALLET_ID;
+
+-- 4. Total value paid (outgoing) by these payee_wallets
+SELECT SUM(amount) AS total_value_paid_out
+FROM rtsp.token_tranlog
+WHERE status = 'C'
+  AND payer_wallet IN (SELECT payee_wallet FROM eligible_wallets);
+
+-- 5. Current balance in each of these wallets
+SELECT payee_wallet, MAX(balance) AS current_balance
+FROM rtsp.token_tranlog
+WHERE payee_wallet IN (SELECT payee_wallet FROM eligible_wallets)
+GROUP BY payee_wallet;
+
+-- 6. Wallet balance range buckets
+SELECT
+  CASE
+    WHEN balance = 0 THEN 'Zero'
+    WHEN balance BETWEEN 1 AND 2499 THEN '₹1–₹2499'
+    WHEN balance BETWEEN 2500 AND 4999 THEN '₹2500–₹4999'
+    WHEN balance BETWEEN 5000 AND 9999 THEN '₹5000–₹9999'
+    WHEN balance = 10000 THEN '₹10000 (full)'
+    WHEN balance > 10000 THEN '> ₹10000'
+    ELSE 'Unknown'
+  END AS balance_range,
+  COUNT(DISTINCT payee_wallet) AS wallet_count
+FROM rtsp.token_tranlog
+WHERE payee_wallet IN (SELECT payee_wallet FROM eligible_wallets)
+GROUP BY
+  CASE
+    WHEN balance = 0 THEN 'Zero'
+    WHEN balance BETWEEN 1 AND 2499 THEN '₹1–₹2499'
+    WHEN balance BETWEEN 2500 AND 4999 THEN '₹2500–₹4999'
+    WHEN balance BETWEEN 5000 AND 9999 THEN '₹5000–₹9999'
+    WHEN balance = 10000 THEN '₹10000 (full)'
+    WHEN balance > 10000 THEN '> ₹10000'
+    ELSE 'Unknown'
+  END;
+
+
+
+
+
+
+
+
+
 WITH eligible_wallets AS (
   SELECT payee_wallet
   FROM rtsp.token_tranlog
