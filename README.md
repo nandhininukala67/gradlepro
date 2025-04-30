@@ -9,6 +9,26 @@ WITH eligible_wallets AS (
 )
 SELECT
   t.payee_wallet,
+  SUM(t.amount) AS amount_received_from_others
+FROM rtsp.token_tranlog t
+JOIN eligible_wallets ew
+  ON t.payee_wallet = ew.payee_wallet
+WHERE t.status = 'C'
+  AND t.payer_wallet != 'SPONSOR_WALLET_ID'
+GROUP BY t.payee_wallet;
+
+
+WITH eligible_wallets AS (
+  SELECT payee_wallet
+  FROM rtsp.token_tranlog
+  WHERE payer_wallet = 'SPONSOR_WALLET_ID'
+    AND amount = 5000
+    AND status = 'C'
+  GROUP BY payee_wallet
+  HAVING COUNT(*) = 2
+)
+SELECT
+  t.payee_wallet,
   SUM(t.amount) AS total_load_amount
 FROM rtsp.token_tranlog t
 JOIN eligible_wallets ew
