@@ -1,3 +1,22 @@
+ SELECT  
+  COUNT(subquery.payee_wallet) AS wallet_count,  
+  SUM(subquery.total_value) AS total_value  
+FROM (  
+  SELECT  
+    t.payee_wallet,  
+    COUNT(*) AS txn_count,  
+    SUM(t.amount) AS total_value  
+  FROM rtsp.token_tranlog t  
+  WHERE t.status = 'C'  
+    AND t.itc = 'Merchant payout.Pool'  
+    AND t.amount = 5000  
+  GROUP BY t.payee_wallet  
+  HAVING COUNT(*) = 1  
+) subquery;  
+
+
+
+
 for (KycLimit dtoLimit : kycLimit) {
     // Fetch existing record from DB
     KycLimit existingLimit = kycLimitManager.getByID(dtoLimit.getId());
