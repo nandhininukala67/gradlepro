@@ -1,3 +1,78 @@
+<div class="outer-layout">
+  <div class="breadcrum">
+  </div>
+  <section style="overflow-x: auto;">
+    <table mat-table [dataSource]="dataSource" class="mat-elevation-z8">
+      <ng-container [matColumnDef]="def['name']" *ngFor="let def of colDef">
+        <th mat-header-cell *matHeaderCellDef class="sub-heading">
+          <div>{{def['heading']}}</div>{{def['subHeading']}}
+        </th>
+        <td mat-cell *matCellDef="let element" [attr.colspan]="def.colspan" [ngClass]="def.colspan == 0 ? 'hide' : ''">
+          <div [ngSwitch]="def.type" *ngIf="def['colspan'] > 0">
+            <span *ngSwitchDefault>
+              <span *ngIf="def['readonly']" style="text-align:left;display:flex;white-space: nowrap;padding-right:5px;">
+                <span [ngClass]="!isEditable ? 'visibility':''">
+                  <span class="check-box-padding">
+                    <mat-checkbox class="example-margin" name="selection" [(ngModel)]="element['isChecked']">
+                    </mat-checkbox>
+                  </span>
+                </span>
+                <label *ngIf="def['readonly'] && def.name === 'type'"> {{element[def['name']] }} KYC -
+                  {{element.coolingLimit === false ? 'Normal' : 'Cooling'}}
+                </label>
+              </span>
+              <span *ngIf="!def['readonly']">
+                <input *ngIf="element.isChecked" style="text-align:center" [readonly]="!element.isChecked"
+                  [type]="def['type']" autocomplete="off" [value]="element[def['name']]"
+                  [(ngModel)]="element[def['name']]"
+                  (ngModelChange)="onInputChange(element[def.name], element, def)">
+                <input *ngIf="!element.isChecked" style="text-align:center" readonly
+                  [value]="element[def['name']] && element[def['name']] !='' ? element[def['name']] : 'No Limit'">
+              </span>
+            </span>
+          </div>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="header-row-first-group">
+        <th mat-header-cell *matHeaderCellDef [attr.colspan]="1">
+          Particulars
+        </th>
+      </ng-container>
+
+      <ng-container matColumnDef="header-row-second-group">
+        <th mat-header-cell *matHeaderCellDef [attr.colspan]="1"> Holding capacity for wallet (Amount) </th>
+      </ng-container>
+
+      <ng-container matColumnDef="header-row-third-group">
+        <th mat-header-cell *matHeaderCellDef [attr.colspan]="9"> Transaction Limit </th>
+      </ng-container>
+
+      <tr mat-header-row
+        *matHeaderRowDef="['header-row-first-group', 'header-row-second-group', 'header-row-third-group']"></tr>
+      <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+      <!-- Disclaimer column -->
+      <ng-container matColumnDef="disclaimer">
+        <td mat-footer-cell *matFooterCellDef colspan="5">
+          Please note that the cost of items displayed are completely and totally made up.
+        </td>
+      </ng-container>
+    </table>
+    <br />
+  </section>
+  <div class="justify-content-end" *checkRole="'manage-kyclimit'">
+    <button mat-raised-button class="form-btn" *ngIf="!isEditChecked" (click)="onEdit()">Edit</button>
+    <button mat-raised-button class="form-btn" [disabled]="!isEditable" (click)="onSubmit($event)">Submit</button>
+    <button mat-raised-button class="btn-cancel" *ngIf="isEditChecked" (click)="onCancel()">Cancel</button>
+  </div>
+</div>
+
+
+
+
+
+
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { MatCheckboxChange } from '@angular/material/checkbox';
 import { MatDialog } from '@angular/material/dialog';
