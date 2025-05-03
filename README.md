@@ -12,6 +12,113 @@ import { KycService } from 'src/app/Services/kyc-management.service';
 })
 export class KycManagementComponent implements OnInit {
   colDef: any[] = [
+    { name: 'type', type: 'readable', readonly: true },
+    { name: 'capacityLimit', type: 'number' },
+    { name: 'perDayLoadLimit', type: 'number' },
+    { name: 'perDayTrfInwardLimit', type: '' },
+    { name: 'txnLoadCount', type: 'number' },
+    { name: 'txnLTfrInwardCount', type: '' },
+    { name: 'perDayUnLoadLimit', type: 'number' },
+    { name: 'perDayTfrOutwardLimit', type: '' },
+    { name: 'txnUnloadCount', type: 'number' },
+    { name: 'txnTrfOutwardCount', type: '' },
+    { name: 'perTransaction', type: 'number' }
+  ];
+
+  displayedColumns: string[] = this.colDef.map(t => t.name);
+  dataSource: MatTableDataSource<any> = new MatTableDataSource();
+  dSource: MatTableDataSource<any> = new MatTableDataSource();
+  isEditable: boolean = false;
+  isEditChecked: boolean = false;
+
+  constructor(
+    public dialog: MatDialog,
+    private kycService: KycService,
+    private cd: ChangeDetectorRef,
+    private toastr: ToastrService
+  ) {}
+
+  ngOnInit(): void {
+    this.kycService.getKycDetails().subscribe(res => {
+      console.log("API Response:", res);
+      if (res && res.success && Array.isArray(res.data)) {
+        const activeRecords = res.data.filter(
+          (record: any) => (record.status || '').toLowerCase() === 'active'
+        );
+        console.log("Filtered Active Records:", activeRecords);
+        this.dataSource.data = activeRecords;
+        this.dSource.data = JSON.parse(JSON.stringify(activeRecords));
+      } else {
+        console.warn("No valid data returned.");
+      }
+    });
+  }
+
+  onEdit() {
+    this.isEditable = true;
+    this.isEditChecked = true;
+  }
+
+  onCancel() {
+    this.isEditable = false;
+    this.isEditChecked = false;
+    this.dataSource.data.forEach((x: any) => x.isChecked = false);
+    this.dataSource.data = JSON.parse(JSON.stringify(this.dSource.data));
+  }
+
+  onSubmit(event: any) {
+    const updatedData = this.dataSource.data.filter((x: any) => x.isChecked);
+    const payload = updatedData.map(({ entityName, isChecked, ...rest }) => {
+      rest.perDayTrfInwardLimit = rest.perDayLoadLimit;
+      rest.txnLTfrInwardCount = rest.txnLoadCount;
+      rest.perDayTfrOutwardLimit = rest.perDayUnLoadLimit;
+      rest.txnTrfOutwardCount = rest.txnUnloadCount;
+      return rest;
+    });
+
+    if (payload.length > 0) {
+      this.kycService.updateKyc(payload).subscribe(
+        data => {
+          if (data && data.success) {
+            this.toastr.success('Update successful');
+            this.isEditable = false;
+            this.isEditChecked = false;
+            this.dataSource.data.forEach((x: any) => x.isChecked = false);
+            this.dSource.data = JSON.parse(JSON.stringify(this.dataSource.data));
+          } else {
+            this.toastr.error(data?.message || 'Update failed');
+          }
+        },
+        error => {
+          console.error("Update Error:", error);
+          this.toastr.error('Server error');
+        }
+      );
+    } else {
+      this.toastr.info('No changes selected');
+    }
+  }
+}
+
+
+
+
+
+
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { MatCheckboxChange } from '@angular/material/checkbox';
+import { MatDialog } from '@angular/material/dialog';
+import { MatTableDataSource } from '@angular/material/table';
+import { ToastrService } from 'ngx-toastr';
+import { KycService } from 'src/app/Services/kyc-management.service';
+
+@Component({
+  selector: 'app-kyc-management',
+  templateUrl: './kyc-management.component.html',
+  styleUrls: ['./kyc-management.component.scss']
+})
+export class KycManagementComponent implements OnInit {
+  colDef: any[] = [
     { name: 'type', type: 'readable', readonly: true, heading: '', colspan: 1, subHeading: '' },
     { name: 'capacityLimit', type: 'number', heading: '', colspan: 1, subHeading: '' },
     { name: 'perDayLoadLimit', type: 'number', heading: 'Per day Load', colspan: 2, subHeading: '(Amount)' },
