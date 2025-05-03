@@ -1,3 +1,110 @@
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { MatCheckboxChange } from '@angular/material/checkbox';
+import { MatDialog } from '@angular/material/dialog';
+import { MatTableDataSource } from '@angular/material/table';
+import { ToastrService } from 'ngx-toastr';
+import { KycService } from 'src/app/Services/kyc-management.service';
+
+@Component({
+  selector: 'app-kyc-management',
+  templateUrl: './kyc-management.component.html',
+  styleUrls: ['./kyc-management.component.scss']
+})
+export class KycManagementComponent implements OnInit {
+  colDef: any[] = [
+    { name: 'type', type: 'readable', readonly: true, heading: '', colspan: 1, subHeading: '' },
+    { name: 'capacityLimit', type: 'number', heading: '', colspan: 1, subHeading: '' },
+    { name: 'perDayLoadLimit', type: 'number', heading: 'Per day Load', colspan: 2, subHeading: '(Amount)' },
+    { name: 'perDayTrfInwardLimit', type: '', heading: 'Per day Transfer', colspan: 0, subHeading: '(inward Amount)' },
+    { name: 'txnLoadCount', type: 'number', heading: 'No. of Load', colspan: 2, subHeading: '(Count)' },
+    { name: 'txnLTfrInwardCount', type: '', heading: 'No of transfer', colspan: 0, subHeading: '(inward count)' },
+    { name: 'perDayUnLoadLimit', type: 'number', heading: 'Per Day Unload', colspan: 2, subHeading: '(Amount)' },
+    { name: 'perDayTfrOutwardLimit', type: '', heading: 'Per day transfer', colspan: 0, subHeading: '(Outward Amount)' },
+    { name: 'txnUnloadCount', type: 'number', heading: 'No. of unload', colspan: 2, subHeading: '(Count)' },
+    { name: 'txnTrfOutwardCount', type: '', heading: 'No. of transfer', colspan: 0, subHeading: '(Outward Count)' },
+    { name: 'perTransaction', type: 'number', heading: 'Per Transaction', colspan: 1, subHeading: '' }
+  ];
+
+  displayedColumns: string[] = this.colDef.map(t => t.name);
+  dataSource: MatTableDataSource<any>;
+  dSource: MatTableDataSource<any>;
+  isEditable: boolean = false;
+  isEditChecked: boolean = false;
+
+  constructor(
+    public dialog: MatDialog,
+    private kycService: KycService,
+    private cd: ChangeDetectorRef,
+    private toastr: ToastrService
+  ) {}
+
+  ngOnInit(): void {
+    this.kycService.getKycDetails().subscribe(res => {
+      if (res && res.success) {
+        this.dataSource = new MatTableDataSource(res?.data);
+        this.dSource = new MatTableDataSource(JSON.parse(JSON.stringify(res?.data)));
+      }
+    });
+  }
+
+  onEdit() {
+    this.isEditable = true;
+    this.isEditChecked = true;
+  }
+
+  onCancel() {
+    this.isEditable = false;
+    this.isEditChecked = false;
+    this.dataSource?.filteredData?.forEach((x: any) => x.isChecked = false);
+    this.dataSource.data = JSON.parse(JSON.stringify(this.dSource.data));
+  }
+
+  onInputChange(value: number, element: any, def: any) {
+    if (value < 0) {
+      element[def.name] = -value;
+    } else {
+      element[def.name] = value;
+    }
+  }
+
+  onSubmit(event: any) {
+    const updatedData = this.dataSource?.filteredData?.filter((x: any) => x.isChecked);
+    const payload = updatedData.map(({ entityName, isChecked, ...rest }) => {
+      rest.perDayTrfInwardLimit = rest.perDayLoadLimit;
+      rest.txnLTfrInwardCount = rest.txnLoadCount;
+      rest.perDayTfrOutwardLimit = rest.perDayUnLoadLimit;
+      rest.txnTrfOutwardCount = rest.txnUnloadCount;
+      return rest;
+    });
+
+    if (payload.length !== 0) {
+      this.kycService.updateKyc(payload).subscribe(
+        data => {
+          if (data && data.success) {
+            this.isEditable = false;
+            this.isEditChecked = false;
+            this.dataSource?.filteredData?.forEach((x: any) => x.isChecked = false);
+            this.dSource.data = JSON.parse(JSON.stringify(this.dataSource.data)); // Reset data source
+          } else if (data && data.message) {
+            this.toastr.error(data.message);
+          } else {
+            this.toastr.error("Server error");
+          }
+        }
+      );
+    } else {
+      this.toastr.error("Select the checkbox to update");
+    }
+  }
+}
+
+
+
+
+
+
+
+
 @Path("/system/kyclimit")
 @AuthPermissionEntity("kyclimit")
 public final class KycLimitService extends BaseService<KycLimit, KycLimit, KycLimitManager, Long> {
