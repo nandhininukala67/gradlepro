@@ -1,3 +1,78 @@
+@Path("/kycAdd")
+@POST
+@AuthPermission(value = {BaseService.MANAGE_PERMISSION})
+public Response kycAdd(List<KycLimit> kycLimitList) {
+    Map<String, Object> resp = new LinkedHashMap<>();
+    KycLimitManager kycLimitManager = getManager();
+
+    for (KycLimit dtoLimit : kycLimitList) {
+        KycLimit existingLimit = kycLimitManager.getByID(dtoLimit.getId());
+
+        // Skip unchanged records
+        if (!isChanged(existingLimit, dtoLimit)) {
+            continue;
+        }
+
+        String kycConfig = "";
+        if (existingLimit != null && isNotBlank(existingLimit.getType())) {
+            kycConfig = "kyc." + existingLimit.getType().toLowerCase() + "." + existingLimit.getLimitType().toLowerCase() + ".";
+        } else {
+            resp.put(JSON_KEY_MSG, "KYC Format is Invalid");
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return Response.ok(resp, MediaType.APPLICATION_JSON).build();
+        }
+
+        // Validate the request and skip if validation fails
+        if (validateRequest(dtoLimit, kycConfig, resp)) {
+            return Response.ok(resp, MediaType.APPLICATION_JSON).build();
+        }
+
+        // Mark the existing record as inactive
+        if (existingLimit != null) {
+            existingLimit.setActive("inactive");
+            getDB().saveOrUpdate(existingLimit);  // Ensure the existing record is saved as inactive
+            getLogger().info("Existing KycLimit marked as inactive: " + existingLimit.getId());  // Added log for inactive update
+        }
+
+        // Create a new KycLimit instance for updated values
+        KycLimit newLimit = new KycLimit();
+        newLimit.setType(dtoLimit.getType());
+        newLimit.setLimitType(dtoLimit.getLimitType());
+        newLimit.setCapacityLimit(dtoLimit.getCapacityLimit());
+        newLimit.setPerDayLoadLimit(dtoLimit.getPerDayLoadLimit());
+        newLimit.setPerDayUnLoadLimit(dtoLimit.getPerDayUnLoadLimit());
+        newLimit.setPerDayTrfInwardLimit(dtoLimit.getPerDayTrfInwardLimit());
+        newLimit.setPerDayTfrOutwardLimit(dtoLimit.getPerDayTfrOutwardLimit());
+        newLimit.setTxnLoadCount(dtoLimit.getTxnLoadCount());
+        newLimit.setTxnLTfrInwardCount(dtoLimit.getTxnLTfrInwardCount());
+        newLimit.setTxnUnloadCount(dtoLimit.getTxnUnloadCount());
+        newLimit.setTxnTrfOutwardCount(dtoLimit.getTxnTrfOutwardCount());
+        newLimit.setMonthlyTrfOutwardCount(dtoLimit.getMonthlyTrfOutwardCount());
+        newLimit.setPerTransaction(dtoLimit.getPerTransaction());
+        newLimit.setCoolingLimit(dtoLimit.isCoolingLimit());
+        newLimit.setActive("active"); // Mark as active
+
+        // Debugging: Log the new limit details
+        getLogger().info("Creating new KycLimit record: " + newLimit);  // Added log for new record creation
+
+        // Save the new limit to the database
+        getDB().saveOrUpdate(newLimit);  // Ensure the new record is saved
+        getLogger().info("New KycLimit saved: " + newLimit.getId());  // Log after new record is saved
+
+        // Send to RTSP switch if limit type is NORMAL
+        if (StringUtils.equals(newLimit.getLimitType(), KYC_LIMIT_TYPE_NORMAL)) {
+            sendToRTSPSwitch(newLimit);
+        }
+
+        resp.put(JSON_KEY_MSG, "KYC Limit updated successfully.");
+        resp.put(JSON_KEY_SUCCESS, Boolean.TRUE);
+    }
+
+    return Response.ok(resp, MediaType.APPLICATION_JSON).build();
+}
+
+
+
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { MatCheckboxChange } from '@angular/material/checkbox';
 import { MatDialog } from '@angular/material/dialog';
