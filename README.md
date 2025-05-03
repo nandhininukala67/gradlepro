@@ -1,3 +1,123 @@
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { MatCheckboxChange } from '@angular/material/checkbox';
+import { MatDialog } from '@angular/material/dialog';
+import { MatTableDataSource } from '@angular/material/table';
+import { ToastrService } from 'ngx-toastr';
+import { KycService } from 'src/app/Services/kyc-management.service';
+
+@Component({
+  selector: 'app-kyc-management',
+  templateUrl: './kyc-management.component.html',
+  styleUrls: ['./kyc-management.component.scss']
+})
+export class KycManagementComponent implements OnInit {
+  colDef: any[] = [
+    { name: 'type', type: 'readable', readonly: true, heading: '', colspan: 1, subHeading: '' },
+    { name: 'capacityLimit', type: 'number', heading: '', colspan: 1, subHeading: '' },
+    { name: 'perDayLoadLimit', type: 'number', heading: 'Per day Load', colspan: 2, subHeading: '(Amount)' },
+    { name: 'perDayTrfInwardLimit', type: '', heading: 'Per day Transfer', colspan: 0, subHeading: '(inward Amount)' },
+    { name: 'txnLoadCount', type: 'number', heading: 'No. of Load', colspan: 2, subHeading: '(Count)' },
+    { name: 'txnLTfrInwardCount', type: '', heading: 'No of transfer', colspan: 0, subHeading: '(inward count)' },
+    { name: 'perDayUnLoadLimit', type: 'number', heading: 'Per Day Unload', colspan: 2, subHeading: '(Amount)' },
+    { name: 'perDayTfrOutwardLimit', type: '', heading: 'Per day transfer', colspan: 0, subHeading: '(Outward Amount)' },
+    { name: 'txnUnloadCount', type: 'number', heading: 'No. of unload', colspan: 2, subHeading: '(Count)' },
+    { name: 'txnTrfOutwardCount', type: '', heading: 'No. of transfer', colspan: 0, subHeading: '(Outward Count)' },
+    { name: 'perTransaction', type: 'number', heading: 'Per Transaction', colspan: 1, subHeading: '' }
+  ];
+
+  displayedColumns: string[] = this.colDef.map(t => t.name);
+  dataSource: MatTableDataSource<any>;
+  dSource: MatTableDataSource<any>;
+  isEditable: boolean = false;
+  isEditChecked: boolean = false;
+
+  constructor(
+    public dialog: MatDialog,
+    private kycService: KycService,
+    private cd: ChangeDetectorRef,
+    private toastr: ToastrService
+  ) {}
+
+  ngOnInit(): void {
+    this.fetchActiveRecords();
+  }
+
+  fetchActiveRecords(): void {
+    this.kycService.getKycDetails().subscribe(res => {
+      console.log("API Response:", res);
+      if (res && res.success) {
+        const activeRecords = res.data.filter((record: any) =>
+          typeof record.status === 'string' && record.status.toLowerCase() === 'active'
+        );
+        console.log("Active Records:", activeRecords);
+        this.dataSource = new MatTableDataSource(activeRecords);
+        this.dSource = new MatTableDataSource(JSON.parse(JSON.stringify(activeRecords)));
+        this.cd.detectChanges();
+      }
+    });
+  }
+
+  onEdit() {
+    this.isEditable = true;
+    this.isEditChecked = true;
+  }
+
+  showOptions(event: MatCheckboxChange): void {
+    this.displayedColumns = this.colDef.map(t => t.name);
+  }
+
+  onCancel() {
+    this.isEditable = false;
+    this.isEditChecked = false;
+    this.dataSource?.filteredData?.forEach((x: any) => x.isChecked = false);
+    this.dataSource.data = JSON.parse(JSON.stringify(this.dSource.data));
+  }
+
+  onInputChange(value: number, element: any, def: any) {
+    if (value < 0) {
+      element[def.name] = -value;
+    }
+  }
+
+  getStatus(element: any): string {
+    const capacityLimit = element.capacityLimit;
+    if (capacityLimit === 1000000) return 'Normal';
+    if (capacityLimit === 5000 || capacityLimit === true) return 'Cooling';
+    if (capacityLimit === 15000) return 'IOSCooling';
+    if (capacityLimit === false) return 'Normal';
+    return 'Normal';
+  }
+
+  onSubmit(event: any) {
+    const updatedData = this.dataSource?.filteredData?.filter((x: any) => x.isChecked);
+
+    const payload = updatedData.map(({ entityName, isChecked, ...rest }) => {
+      rest.perDayTrfInwardLimit = rest.perDayLoadLimit;
+      rest.txnLTfrInwardCount = rest.txnLoadCount;
+      rest.perDayTfrOutwardLimit = rest.perDayUnLoadLimit;
+      rest.txnTrfOutwardCount = rest.txnUnloadCount;
+      return rest;
+    });
+
+    if (payload.length > 0) {
+      this.kycService.updateKyc(payload).subscribe(data => {
+        if (data && data.success) {
+          this.toastr.success('Update successful');
+          this.isEditable = false;
+          this.isEditChecked = false;
+          this.fetchActiveRecords(); // Refresh table
+        } else if (data && data.message) {
+          this.toastr.error(data.message);
+        } else {
+          this.toastr.error('Server error');
+        }
+      });
+    }
+  }
+}
+
+
+
 -- Assumptions:
 -- - The working table is rtsp.token_tranlog
 -- - Input variables:
