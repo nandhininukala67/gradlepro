@@ -1,3 +1,258 @@
+@Path("/system/kyclimit")
+@AuthPermissionEntity("kyclimit")
+public final class KycLimitService extends BaseService<KycLimit, KycLimit, KycLimitManager, Long> {
+
+    public KycLimitService() {
+        super(KycLimit.class, KycLimitManager.class);
+    }
+
+    protected KycLimitService(Class<KycLimit> tClass, Class<KycLimitManager> kycLimitManagerClass) {
+        super(tClass, kycLimitManagerClass);
+    }
+
+    protected boolean isChanged(KycLimit entity, KycLimit dtoData) {
+        boolean equal = new EqualsBuilder()
+                .append(entity.getId(), dtoData.getId())
+                .append(entity.getType(), dtoData.getType())
+                .append(entity.getCapacityLimit(), dtoData.getCapacityLimit())
+                .append(entity.getPerDayLoadLimit(), dtoData.getPerDayLoadLimit())
+                .append(entity.getPerDayUnLoadLimit(), dtoData.getPerDayUnLoadLimit())
+                .append(entity.getPerDayTrfInwardLimit(), dtoData.getPerDayTrfInwardLimit())
+                .append(entity.getPerDayTfrOutwardLimit(), dtoData.getPerDayTfrOutwardLimit())
+                .append(entity.getTxnLoadCount(), dtoData.getTxnLoadCount())
+                .append(entity.getTxnLTfrInwardCount(), dtoData.getTxnLTfrInwardCount())
+                .append(entity.getTxnTrfOutwardCount(), dtoData.getTxnTrfOutwardCount())
+                .append(entity.getTxnUnloadCount(), dtoData.getTxnUnloadCount())
+                .append(entity.isCoolingLimit(), dtoData.isCoolingLimit())
+                .append(entity.getPerTransaction(), dtoData.getPerTransaction())
+                .append(entity.getMonthlyTrfOutwardLimit(), dtoData.getMonthlyTrfOutwardLimit())
+                .append(entity.getMonthlyTrfOutwardCount(), dtoData.getMonthlyTrfOutwardCount())
+                .isEquals();
+
+        return (!equal);
+    }
+
+    @Path("/kycAdd")
+    @POST
+    @AuthPermission(value = {BaseService.MANAGE_PERMISSION})
+    public Response kycAdd(List<KycLimit> kycLimitList) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        KycLimitManager kycLimitManager = getManager();
+
+        for (KycLimit dtoLimit : kycLimitList) {
+            KycLimit existingLimit = kycLimitManager.getByID(dtoLimit.getId());
+
+            if (existingLimit == null) {
+                resp.put(JSON_KEY_MSG, "Record not found");
+                resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+                return Response.ok(resp, MediaType.APPLICATION_JSON).build();
+            }
+
+            if (!isChanged(existingLimit, dtoLimit)) {
+                return error(Response.Status.NOT_MODIFIED, "Not Changed");
+            }
+
+            String kycConfig = "";
+            if (existingLimit != null && isNotBlank(existingLimit.getType())) {
+                kycConfig = "kyc." + existingLimit.getType().toLowerCase() + "." + existingLimit.getLimitType().toLowerCase() + ".";
+            } else {
+                resp.put(JSON_KEY_MSG, "KYC Format is Invalid");
+                resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+                return Response.ok(resp, MediaType.APPLICATION_JSON).build();
+            }
+
+            if (validateRequest(dtoLimit, kycConfig, resp)) {
+                return Response.ok(resp, MediaType.APPLICATION_JSON).build();
+            }
+
+            // Mark the existing record as inactive
+            existingLimit.setActive("inactive");
+            getDB().saveOrUpdate(existingLimit);
+
+            // Create a new KycLimit instance for updated values
+            KycLimit newLimit = new KycLimit();
+
+            newLimit.setType(dtoLimit.getType());
+            newLimit.setLimitType(dtoLimit.getLimitType());
+            newLimit.setCapacityLimit(dtoLimit.getCapacityLimit());
+            newLimit.setPerDayLoadLimit(dtoLimit.getPerDayLoadLimit());
+            newLimit.setPerDayUnLoadLimit(dtoLimit.getPerDayUnLoadLimit());
+            newLimit.setPerDayTrfInwardLimit(dtoLimit.getPerDayTrfInwardLimit());
+            newLimit.setPerDayTfrOutwardLimit(dtoLimit.getPerDayTfrOutwardLimit());
+            newLimit.setTxnLoadCount(dtoLimit.getTxnLoadCount());
+            newLimit.setTxnLTfrInwardCount(dtoLimit.getTxnLTfrInwardCount());
+            newLimit.setTxnUnloadCount(dtoLimit.getTxnUnloadCount());
+            newLimit.setTxnTrfOutwardCount(dtoLimit.getTxnTrfOutwardCount());
+            newLimit.setMonthlyTrfOutwardCount(dtoLimit.getMonthlyTrfOutwardCount());
+            newLimit.setPerTransaction(dtoLimit.getPerTransaction());
+            newLimit.setCoolingLimit(dtoLimit.isCoolingLimit());
+            newLimit.setActive("active"); // Mark as active
+
+            // Save the new record - the ORM will handle generating the ID
+            getDB().saveOrUpdate(newLimit);
+
+            // Send to switch if type is NORMAL
+            if (StringUtils.equals(newLimit.getLimitType(), KYC_LIMIT_TYPE_NORMAL)) {
+                sendToRTSPSwitch(newLimit);
+            }
+
+            resp.put(JSON_KEY_MSG, "KYC Limit updated successfully.");
+            resp.put(JSON_KEY_SUCCESS, Boolean.TRUE);
+        }
+
+        return Response.ok(resp, MediaType.APPLICATION_JSON).build();
+    }
+
+    private static boolean validateRequest(KycLimit dtoLimit, String kycConfig, Map<String, Object> resp) {
+        BigDecimal configLimitPerDayLoad = new BigDecimal(Config.getDBConfig(kycConfig + "per.day.load", "0"));
+        BigDecimal perDayLoadLimit = dtoLimit.getPerDayLoadLimit();
+
+        if (configLimitPerDayLoad.compareTo(perDayLoadLimit) < 0) {
+            resp.put(JSON_KEY_MSG, "Per Day Load limit exceeded. </br>Configured limit is " + configLimitPerDayLoad);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        BigDecimal configLimitPerDayInward = new BigDecimal(Config.getDBConfig(kycConfig + "per.day.transfer.inward", "0"));
+        BigDecimal perDayInwardLimit = dtoLimit.getPerDayTrfInwardLimit();
+
+        if (configLimitPerDayInward.compareTo(perDayInwardLimit) < 0) {
+            resp.put(JSON_KEY_MSG, "Per day transfer inward limit exceeded.</br>Configured limit is " + configLimitPerDayInward);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        BigDecimal configLimitPerDayUnLoad = new BigDecimal(Config.getDBConfig(kycConfig + "per.day.unload", "0"));
+        BigDecimal perDayUnLoadLimit = dtoLimit.getPerDayUnLoadLimit();
+
+        if (configLimitPerDayUnLoad.compareTo(perDayUnLoadLimit) < 0) {
+            resp.put(JSON_KEY_MSG, "Per Day UnLoad limit exceeded. </br>Configured limit is " + configLimitPerDayUnLoad);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        BigDecimal configLimitPerDayOutward = new BigDecimal(Config.getDBConfig(kycConfig + "per.day.transfer.outward", "0"));
+        BigDecimal perDayOutwardLimit = dtoLimit.getPerDayTfrOutwardLimit();
+
+        if (configLimitPerDayOutward.compareTo(perDayOutwardLimit) < 0) {
+            resp.put(JSON_KEY_MSG, "Per day outward limit exceeded.</br>Configured limit is " + configLimitPerDayOutward);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        long dbtxnLoadCount = Long.parseLong(Config.getDBConfig(kycConfig + "number.of.load.count", "0"));
+        long txnLoadCount = dtoLimit.getTxnLoadCount();
+
+        if (dbtxnLoadCount < txnLoadCount) {
+            resp.put(JSON_KEY_MSG, "Number of load count limit exceeded. </br>Configured limit is " + dbtxnLoadCount);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        long dbtxnInwardCount = Long.parseLong(Config.getDBConfig(kycConfig + "number.of.inward.count", "0"));
+        long txnInwardCount = dtoLimit.getTxnLTfrInwardCount();
+
+        if (dbtxnInwardCount < txnInwardCount) {
+            resp.put(JSON_KEY_MSG, "Number of inward txn count limit exceeded.</br>Configured limit is " + dbtxnInwardCount);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        long dbTxnUnloadCount = Long.parseLong(Config.getDBConfig(kycConfig + "number.of.unload.count", "0"));
+        long txnUnloadCount = dtoLimit.getTxnUnloadCount();
+
+        if (dbTxnUnloadCount < txnUnloadCount) {
+            resp.put(JSON_KEY_MSG, "Number of Txn Unload count limit exceeded. </br>Configured limit is " + dbTxnUnloadCount);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        long dbTxnOutwardCount = Long.parseLong(Config.getDBConfig(kycConfig + "number.of.outward.count", "0"));
+        long txnOutwardCount = dtoLimit.getTxnTrfOutwardCount();
+
+        if (dbTxnOutwardCount < txnOutwardCount) {
+            resp.put(JSON_KEY_MSG, "Number of outward txn count limit exceeded.</br>Configured limit is " + dbTxnOutwardCount);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        long dbMonthlyTrfOutwardCount = Long.parseLong(Config.getDBConfig(kycConfig + "monthly.trf.outward.count", "0"));
+        long monthlyTrfOutwardCount = dtoLimit.getMonthlyTrfOutwardCount();
+
+        if (dbMonthlyTrfOutwardCount < monthlyTrfOutwardCount) {
+            resp.put(JSON_KEY_MSG, "Monthly transfer outward count limit exceeded.</br>Configured limit is " + dbMonthlyTrfOutwardCount);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        BigDecimal dbPerTxnLimit = new BigDecimal(Config.getDBConfig(kycConfig + "per.txn.limit", "0"));
+        BigDecimal perTxnLimit = dtoLimit.getPerTransaction();
+
+        if (dbPerTxnLimit.compareTo(perTxnLimit) < 0) {
+            resp.put(JSON_KEY_MSG, "Per transaction limit exceeded.</br>Configured limit is " + dbPerTxnLimit);
+            resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+            return true;
+        }
+
+        //Check wallet holding limit only for FULL KYC - NORMAL
+        if (StringUtils.equals(kycConfig, "kyc.full.normal.")) {
+
+            BigDecimal dbWalletHoldingLimit = new BigDecimal(Config.getDBConfig(kycConfig + "wallet.holding.limit", "0"));
+            BigDecimal walletHoldingLimit = dtoLimit.getCapacityLimit();
+
+            if (dbWalletHoldingLimit.compareTo(walletHoldingLimit) < 0) {
+                resp.put(JSON_KEY_MSG, "Wallet holding limit exceeded.</br>Configured limit is " + dbWalletHoldingLimit);
+                resp.put(JSON_KEY_SUCCESS, Boolean.FALSE);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void sendToRTSPSwitch(KycLimit dtoLimit) {
+        if (Config.getBoolean("post.kyc.capacity.limit.config.to.rtsp", true)) {
+            Runnable worker = () -> {
+                try {
+                    String httpUrl = Config.getDBConfig(KYCLIMIT_URL_RTSP_SWITCH);
+                    String httpsUrl = Config.getDBConfig(KYCLIMIT_HTTPS_URL_RTSP_SWITCH);
+                    String channel = Config.getDBConfig(SWITCH_CHANNEL);
+                    String institute = Config.getDBConfig(SWITCH_INSTITUTE);
+                    String authorization = Config.getDBConfig(SWITCH_AUTHORIZATION);
+                    String timeout = Config.getDBConfig(SWITCH_TIMEOUT);
+                    String readTimeout = Config.getDBConfig(SWITCH_READ_TIMEOUT);
+                    String https = Config.getDBConfig(SWITCH_PROTOCOL);
+                    boolean isSecure = StringUtils.equals(SWITCH_HTTPS_PROTOCOL, https);
+
+                    if (isNotBlank(httpUrl) && isNotBlank(channel) && isNotBlank(authorization)) {
+                        JSONObject jsonPayload = new JSONObject();
+                        jsonPayload.put(SWITCH_KYC_KEY, dtoLimit.getType());
+                        jsonPayload.put(SWITCH_KYC_CAPACITY_LIMIT, dtoLimit.getCapacityLimit());
+
+                        WebResource webResource = JerseyUtil.getInstance().getResource(Integer.valueOf(timeout), Integer.valueOf(readTimeout),
+                                isSecure, jsonPayload, httpsUrl, httpUrl, getDB());
+
+                        printSwitchApiTxns(SWITCH_RTSP, true, jsonPayload);
+
+                        ClientResponse response = JerseyHelper.post(institute, channel, authorization, jsonPayload, webResource);
+                        String stringifyResponse = response.getEntity(String.class);
+
+                        printSwitchApiTxns(SWITCH_RTSP, false, stringifyResponse);
+                    } else {
+                        getLogger().error(URL_AND_HEADER_NOT_CONFIGURED);
+                    }
+                } catch (Exception e) {
+                    getLogger().error(EXCEPTION_OCCURRED + ExceptionUtils.getStackTrace(e));
+                }
+            };
+            new Thread(worker).start();
+        }
+    }
+}
+
+
+
+
 @Path("/kycAdd")
 @POST
 @AuthPermission(value = {BaseService.MANAGE_PERMISSION})
