@@ -37,7 +37,6 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Properties;
-import java.util.UUID;
 
 public abstract class HttpCall {
     protected String sourceId;
@@ -115,7 +114,9 @@ public abstract class HttpCall {
     }
 
     private void generateSessionKey() {
-        sessionKey = StringUtils.replace(UUID.randomUUID().toString(), "-", "");
+        byte[] bytes = new byte[32]; // 32 bytes = 256 bits
+        new SecureRandom().nextBytes(bytes);
+        sessionKey = Base64.encodeBase64String(bytes);
     }
 
     private byte[] getIVFromSessionKey() throws UnsupportedEncodingException, NoSuchAlgorithmException {
@@ -172,7 +173,7 @@ public abstract class HttpCall {
         Cipher cipher = Cipher.getInstance(RSA_ALGO);
         cipher.init(Cipher.ENCRYPT_MODE, publicKey);
         byte[] cipherData = cipher.doFinal(data.getBytes(ENCODING));
-        return Base64.encodeBase64String(cipherData).replaceAll("\r\n", "");
+        return Base64.encodeBase64String(cipherData);
     }
 
     private PrivateKey getSrvtPrivateKey() throws Exception {
@@ -446,10 +447,9 @@ public abstract class HttpCall {
     }
 
     public String getCbsIrcDetails() {
-        return responsePayload != null ? responsePayload.toString() : null ;
-    }
+        return responsePayload != null ? responsePayload.toString() : null ;
+    }
 }
-
 
 RTSP DB Changes: 
 New table is added in RTSP DB:
@@ -687,5 +687,6 @@ Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) 
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1273,'SYS','0153','Duplicate Virtual Reference Number. Please input correct value',null);
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1274,'SYS','0154','aadhaar Number not found. Please input correct value',null);
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1275,'SYS','0155','Technical Error. Please try again late',null);
+
 
 
