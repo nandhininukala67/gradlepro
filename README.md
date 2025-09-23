@@ -23,7 +23,10 @@ import org.jpos.iso.ISOUtil;
 import org.jpos.util.LogEvent;
 import org.json.JSONObject;
 
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
@@ -32,6 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -62,7 +66,7 @@ public abstract class HttpCall {
     private static final String ENCODING = "UTF-8";
     private static final int GCM_TAG_LENGTH = 128;
     private static final int GCM_IV_LENGTH = 12;
-    private static final String RSA_ALGO = "RSA/ECB/OAEPWithSHA-256AndMGF1Padding";
+    private static final String RSA_ALGO = "RSA/ECB/OAEPPadding";
     private static final String SHA256 = "SHA256withRSA";
 
     protected String actualApiResponse;
@@ -119,26 +123,30 @@ public abstract class HttpCall {
         sessionKey = Base64.encodeBase64String(bytes);
     }
 
-    private byte[] getIVFromSessionKey() throws UnsupportedEncodingException, NoSuchAlgorithmException {
+    private byte[] getIVFromSessionKey() throws NoSuchAlgorithmException {
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
         byte[] keyBytes = sha.digest(sessionKey.getBytes(StandardCharsets.UTF_8));
         return Arrays.copyOf(keyBytes, 16);
     }
 
     private String decrypt(final String encryptedText) throws Exception {
-        byte[] cipherBytes = Base64.decodeBase64(encryptedText);
+        byte[] encrypted = Base64.decodeBase64(encryptedText);
 
         byte[] keyBytes = getIVFromSessionKey();
         SecretKeySpec keySpec = new SecretKeySpec(keyBytes, AES_ALGO);
 
-        byte[] iv = new byte[GCM_IV_LENGTH];
-        System.arraycopy(keyBytes, 0, iv, 0, GCM_IV_LENGTH);
+        // Extract IV
+        byte[] iv = Arrays.copyOfRange(encrypted, 0, GCM_IV_LENGTH);
+
+        // Extract CipherText
+        byte[] cipherBytes = Arrays.copyOfRange(encrypted, GCM_IV_LENGTH, encrypted.length);
 
         Cipher cipher = Cipher.getInstance(AES_CIPHER);
         GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
         cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec);
 
         byte[] plain = cipher.doFinal(cipherBytes);
+
         return new String(plain, StandardCharsets.UTF_8);
     }
 
@@ -157,7 +165,13 @@ public abstract class HttpCall {
         cipher.init(Cipher.ENCRYPT_MODE, keySpec, gcmSpec);
 
         byte[] cipherBytes = cipher.doFinal(plainTextBytes);
-        return Base64.encodeBase64String(cipherBytes);
+
+        // Combine IV + CipherText
+        byte[] encrypted = new byte[iv.length + cipherBytes.length];
+        System.arraycopy(iv, 0, encrypted, 0, iv.length);
+        System.arraycopy(cipherBytes, 0, encrypted, iv.length, cipherBytes.length);
+
+        return Base64.encodeBase64String(encrypted);
     }
 
     private PublicKey getEisPublicKey() throws Exception {
@@ -169,7 +183,7 @@ public abstract class HttpCall {
         }
     }
 
-    private String encryptRSA(String data, PublicKey publicKey) throws Exception {
+    private String encryptRSA(String data, PublicKey publicKey) throws InvalidKeyException, NoSuchAlgorithmException, IllegalBlockSizeException, BadPaddingException, UnsupportedEncodingException, NoSuchPaddingException {
         Cipher cipher = Cipher.getInstance(RSA_ALGO);
         cipher.init(Cipher.ENCRYPT_MODE, publicKey);
         byte[] cipherData = cipher.doFinal(data.getBytes(ENCODING));
@@ -190,7 +204,7 @@ public abstract class HttpCall {
         return kf.generatePrivate(keySpec);
     }
 
-    private String getSignature(String data) throws Exception {
+    private String getSignature(String data) throws Exception, InvalidKeySpecException {
         Signature signature = Signature.getInstance(SHA256);
         signature.initSign(getSrvtPrivateKey());
         signature.update(data.getBytes(ENCODING));
@@ -273,7 +287,7 @@ public abstract class HttpCall {
         }
         evt.addMessage("Response encrypted payload - " + encryptedPayload);
 
-        if (!verifySignature(encryptedPayload.getString("DIGI_SIGN"))) {
+        if (verifySignature(encryptedPayload.getString("DIGI_SIGN"))) {
             requestSuccess = false;
             message = "Invalid or missing DIGI_SIGN in response";
             return;
@@ -341,7 +355,6 @@ public abstract class HttpCall {
 
         int stan = (_switchRefId != null) ? _switchRefId.intValue() : new SecureRandom().nextInt();
         String randomStr = ISOUtil.zeropad(Integer.toString(Math.abs(stan) % 100000000), 8);
-
         return new StringBuilder("SBI").append(sourceId).append(dateStr).append(randomStr).toString();
     }
     private void generateUrn(String sourceId) throws ISOException {
@@ -687,6 +700,7 @@ Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) 
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1273,'SYS','0153','Duplicate Virtual Reference Number. Please input correct value',null);
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1274,'SYS','0154','aadhaar Number not found. Please input correct value',null);
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1275,'SYS','0155','Technical Error. Please try again late',null);
+
 
 
 
