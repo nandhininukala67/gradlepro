@@ -28,6 +28,7 @@ import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.net.SocketTimeoutException;
@@ -92,7 +93,7 @@ public abstract class HttpCall {
             ApiClientConfig apiConfig = new ApiClientConfig(cfg.get("http-client", "SBIEIS"), config);
             HttpHelper httpHelper = new HttpHelper(apiConfig);
             HttpRequestWrapper requestWrapper = getRequestWrapper();
-            //evt.addMessage("Bank aekKey - " + sessionKey);
+            evt.addMessage("Bank aekKey - " + sessionKey);
             evt.addMessage("Bank Url is - " + url);
             evt.addMessage("Bank Http Parameters - " + apiConfig);
 
@@ -123,55 +124,37 @@ public abstract class HttpCall {
         sessionKey = Base64.encodeBase64String(bytes);
     }
 
-    private byte[] getIVFromSessionKey() throws NoSuchAlgorithmException {
-        MessageDigest sha = MessageDigest.getInstance("SHA-256");
-        byte[] keyBytes = sha.digest(sessionKey.getBytes(StandardCharsets.UTF_8));
-        return Arrays.copyOf(keyBytes, 16);
-    }
+//    private byte[] getIVFromSessionKey() throws NoSuchAlgorithmException {
+//        MessageDigest sha = MessageDigest.getInstance("SHA-256");
+//        byte[] keyBytes = sha.digest(sessionKey.getBytes(StandardCharsets.UTF_8));
+//        return Arrays.copyOf(keyBytes, 12);
+//    }
 
     private String decrypt(final String encryptedText) throws Exception {
         byte[] encrypted = Base64.decodeBase64(encryptedText);
-
-        byte[] keyBytes = getIVFromSessionKey();
+        byte[] keyBytes = Base64.decodeBase64(sessionKey);
         SecretKeySpec keySpec = new SecretKeySpec(keyBytes, AES_ALGO);
-
-        // Extract IV
-        byte[] iv = Arrays.copyOfRange(encrypted, 0, GCM_IV_LENGTH);
-
-        // Extract CipherText
-        byte[] cipherBytes = Arrays.copyOfRange(encrypted, GCM_IV_LENGTH, encrypted.length);
-
+        IvParameterSpec ivTemp= new IvParameterSpec(Arrays.copyOf(sessionKey.getBytes(StandardCharsets.UTF_8),12));
+        GCMParameterSpec iv =new GCMParameterSpec(GCM_TAG_LENGTH,ivTemp.getIV());
         Cipher cipher = Cipher.getInstance(AES_CIPHER);
-        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-        cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec);
+        cipher.init(Cipher.DECRYPT_MODE, keySpec, iv);
 
-        byte[] plain = cipher.doFinal(cipherBytes);
-
+        byte[] plain = cipher.doFinal(encrypted);
         return new String(plain, StandardCharsets.UTF_8);
     }
 
     private String encrypt(final String plainText) throws Exception {
         byte[] plainTextBytes = plainText.getBytes(ENCODING);
-
-        byte[] keyBytes = getIVFromSessionKey();
-        SecretKeySpec keySpec = new SecretKeySpec(keyBytes, AES_ALGO);
-
-        byte[] iv = new byte[GCM_IV_LENGTH];
-        SecureRandom random = new SecureRandom();
-        random.nextBytes(iv);
-
+        byte[] keyBytes = Base64.decodeBase64(sessionKey);
+        SecretKeySpec keySpec = new SecretKeySpec(keyBytes, "AES");
+        IvParameterSpec ivTemp= new IvParameterSpec(Arrays.copyOf(keyBytes, 12));
+        GCMParameterSpec iv =new GCMParameterSpec(128, ivTemp.getIV());
         Cipher cipher = Cipher.getInstance(AES_CIPHER);
-        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-        cipher.init(Cipher.ENCRYPT_MODE, keySpec, gcmSpec);
+        cipher.init(Cipher.ENCRYPT_MODE, keySpec, iv);
 
-        byte[] cipherBytes = cipher.doFinal(plainTextBytes);
+        byte[] encrypt = cipher.doFinal(plainTextBytes);
 
-        // Combine IV + CipherText
-        byte[] encrypted = new byte[iv.length + cipherBytes.length];
-        System.arraycopy(iv, 0, encrypted, 0, iv.length);
-        System.arraycopy(cipherBytes, 0, encrypted, iv.length, cipherBytes.length);
-
-        return Base64.encodeBase64String(encrypted);
+        return Base64.encodeBase64String(encrypt);
     }
 
     private PublicKey getEisPublicKey() throws Exception {
@@ -700,6 +683,7 @@ Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) 
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1273,'SYS','0153','Duplicate Virtual Reference Number. Please input correct value',null);
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1274,'SYS','0154','aadhaar Number not found. Please input correct value',null);
 Insert into RTSP.RC_LOCALE (ID,LOCALE,RESULTCODE,RESULTINFO,EXTENDEDRESULTCODE) values (1275,'SYS','0155','Technical Error. Please try again late',null);
+
 
 
 
